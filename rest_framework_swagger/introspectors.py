@@ -150,6 +150,10 @@ class BaseViewIntrospector(object):
     def get_docs(self):
         return get_view_description(self.callback)
 
+    def get_swagger_docs(self):
+        return getattr(self.callback, 'swagger_docs', None)
+
+
 
 class BaseMethodIntrospector(object):
     __metaclass__ = ABCMeta
@@ -235,7 +239,18 @@ class BaseMethodIntrospector(object):
             serializer = self.get_serializer_class()
         return serializer
 
+    def _get_swdocs(self, what):
+        swdocs = self.parent.get_swagger_docs()
+        if swdocs is not None and self.method in swdocs:
+            return swdocs[self.method].get(what, None)
+
+
     def get_summary(self):
+
+        sw_summary = self._get_swdocs('summary')
+        if sw_summary is not None:
+            return sw_summary
+
         # If there is no docstring on the method, get class docs
         return IntrospectorHelper.get_summary(
             self.callback,
@@ -252,6 +267,11 @@ class BaseMethodIntrospector(object):
         listed. First, get the class docstring and then get the method's. The
         methods will always inherit the class comments.
         """
+
+        sw_notes = self._get_swdocs('notes')
+        if sw_notes is not None:
+            return sw_notes
+
         docstring = ""
 
         class_docs = get_view_description(self.callback)
@@ -285,6 +305,22 @@ class BaseMethodIntrospector(object):
         body_params = self.build_body_parameters()
         form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
+
+        sw_params = self._get_swdocs('params')
+        if sw_params is not None:
+            for par in sw_params:
+                if par == 'PATH_PARAMS':
+                    params += path_params
+                elif par == 'BODY_PARAMS':
+                    params.append(body_params)
+                elif par == 'FORM_PARAMS':
+                    params += form_params
+                elif par == 'QUERY_PARAMS':
+                    params += query_params
+                else:
+                    params.append(par)
+            return params
+
         if django_filters is not None:
             query_params.extend(
                 self.build_query_parameters_from_django_filters())
@@ -365,6 +401,15 @@ class BaseMethodIntrospector(object):
         for line in split_lines:
             param = line.split(' -- ')
             if len(param) == 2:
+                name, description = param
+                type = 'form'
+                if '[q]' in description:
+                    type = 'query'
+                    description = description.replace('[q]', '')
+                if '[b]' in description:
+                    type = 'body'
+                    description = description.replace('[b]', '')
+
                 params.append({'paramType': 'query',
                                'name': param[0].strip(),
                                'description': param[1].strip(),
@@ -591,6 +636,28 @@ class ViewSetIntrospector(BaseViewIntrospector):
             if pattern.callback:
                 stuff.extend(self._resolve_methods(pattern).values())
         return stuff
+
+    # kompas
+    # def _resolve_methods(self):
+    #     import six
+
+    #     callback = self.pattern.callback
+
+    #     try:
+    #         closure = six.get_function_closure(callback)
+    #         code = six.get_function_code(callback)
+
+    #         while getattr(code, 'co_name') != 'view':
+    #             # lets unwrap!
+    #             view = getattr(closure[0], 'cell_contents')
+    #             closure = six.get_function_closure(view)
+    #             code = six.get_function_code(view)
+
+    #         freevars = code.co_freevars
+    #     except (AttributeError, IndexError):
+    #         raise RuntimeError('Unable to use callback invalid closure/function specified.')
+    #     else:
+    #         return closure[freevars.index('actions')].cell_contents
 
     def _resolve_methods(self, pattern=None):
         from .decorators import closure_n_code, get_closure_var

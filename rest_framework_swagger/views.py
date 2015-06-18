@@ -1,4 +1,8 @@
 import json
+import os
+import subprocess
+import socket
+
 from django.utils import six
 
 from django.views.generic import View
@@ -50,21 +54,26 @@ def get_full_base_path(request):
         return '{0}://{1}'.format(protocol, base_path.rstrip('/'))
 
 
-class SwaggerUIView(View):
+class SwaggerUIView(APIDocView):
     def get(self, request, *args, **kwargs):
 
         if not self.has_permission(request):
             return self.handle_permission_denied(request)
 
         template_name = rfs.SWAGGER_SETTINGS.get('template_path')
+        #template_name = "rest_framework_swagger/index.html"
+        discovery_url = "{}{}docs/api-docs/".format(
+            self.base_uri, rfs.SWAGGER_SETTINGS.get('api_path', '/'))
         data = {
             'swagger_settings': {
-                'discovery_url': "%s/api-docs/" % get_full_base_path(request),
+                # 'discovery_url': "%s/api-docs/" % get_full_base_path(request),
+                'discovery_url': discovery_url,
                 'api_key': rfs.SWAGGER_SETTINGS.get('api_key', ''),
                 'token_type': rfs.SWAGGER_SETTINGS.get('token_type'),
                 'enabled_methods': mark_safe(
                     json.dumps(rfs.SWAGGER_SETTINGS.get('enabled_methods'))),
                 'doc_expansion': rfs.SWAGGER_SETTINGS.get('doc_expansion', ''),
+                'release_info': self.get_git_info(),
             }
         }
         response = render_to_response(
@@ -95,6 +104,22 @@ class SwaggerUIView(View):
         else:
             raise PermissionDenied()
 
+    def get_git_info(self):
+        module_dir = os.path.dirname(__file__)
+        root_dir = os.path.abspath("{}/../..".format(module_dir))
+
+        desc = os.path.join(root_dir, 'git-desc')
+        if os.path.exists(desc):
+            descr = open(desc).read()
+        else:
+            descr = subprocess.check_output(
+                ['git', 'describe', '--tags', 'HEAD'],
+                cwd=root_dir,
+                stderr=subprocess.STDOUT,
+            )
+        descr = descr.strip()
+        hostname = socket.gethostname()
+        return "{}@{}".format(descr, hostname)
 
 class SwaggerResourcesView(APIDocView):
     renderer_classes = (JSONRenderer,)
@@ -105,13 +130,15 @@ class SwaggerResourcesView(APIDocView):
 
         for path in resources:
             apis.append({
-                'path': "/%s" % path,
+                # 'path': "/%s" % path,
+                'path': "%s" % path,
             })
 
         return Response({
             'apiVersion': rfs.SWAGGER_SETTINGS.get('api_version', ''),
             'swaggerVersion': '1.2',
-            'basePath': self.get_base_path(),
+            # 'basePath': self.get_base_path(),
+            'basePath': "{}{}".format(self.base_uri, request.path),
             'apis': apis,
             'info': rfs.SWAGGER_SETTINGS.get('info', {
                 'contact': '',
@@ -153,7 +180,8 @@ class SwaggerApiView(APIDocView):
         return Response({
             'apiVersion': rfs.SWAGGER_SETTINGS.get('api_version', ''),
             'swaggerVersion': '1.2',
-            'basePath': self.api_full_uri.rstrip('/'),
+            # 'basePath': self.api_full_uri.rstrip('/'),
+            'basePath': self.base_uri,
             'resourcePath': '/' + path,
             'apis': generator.generate(apis),
             'models': generator.get_models(apis),
