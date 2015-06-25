@@ -9,8 +9,8 @@ class APIDocView(APIView):
         self.permission_classes = (self.get_permission_class(request),)
 
         # self.host = request.build_absolute_uri()
-        # self.api_path = SWAGGER_SETTINGS['api_path']
-        # self.api_full_uri = request.build_absolute_uri(self.api_path)
+        self.api_path = SWAGGER_SETTINGS['api_path']
+        self.api_full_uri = request.build_absolute_uri(self.api_path)
 
         protocol = "https" if request.is_secure() else "http"
         if 'HTTP_X_FORWARDED_HOST' in request.META:

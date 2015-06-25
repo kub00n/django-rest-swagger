@@ -410,7 +410,7 @@ class BaseMethodIntrospector(object):
                     type = 'body'
                     description = description.replace('[b]', '')
 
-                params.append({'paramType': 'query',
+                params.append({'paramType': type,
                                'name': param[0].strip(),
                                'description': param[1].strip(),
                                'dataType': ''})
